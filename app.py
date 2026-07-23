@@ -44,6 +44,23 @@ def build_message(sender: str, to_addr: str, subject: str, body: str, is_html: b
 
 
 st.set_page_config(page_title="Bulk Email Sender", page_icon="📧", layout="wide")
+
+# ---------------- Access gate ----------------
+# Set ACCESS_CODE in Streamlit Cloud → App settings → Secrets to lock this app down.
+# If no ACCESS_CODE secret is configured (e.g. local dev), the gate is skipped.
+required_code = st.secrets.get("ACCESS_CODE")
+if required_code:
+    if not st.session_state.get("unlocked"):
+        st.title("🔒 Locked")
+        entered = st.text_input("Access code", type="password")
+        if st.button("Unlock"):
+            if entered == required_code:
+                st.session_state["unlocked"] = True
+                st.rerun()
+            else:
+                st.error("Wrong code.")
+        st.stop()
+
 st.title("📧 Bulk Personalized Email Sender")
 
 # ---------------- Sidebar: account ----------------
