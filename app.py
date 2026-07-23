@@ -97,26 +97,46 @@ st.sidebar.info(
 )
 
 # ---------------- Step 2: recipient data ----------------
-st.header("2. Upload recipient data")
-data_file = st.file_uploader("Excel (.xlsx) or CSV with one row per person", type=["xlsx", "xls", "csv"])
+st.header("2. Recipient data")
+st.caption("Upload a file and/or type rows in by hand — the table below is fully editable, add/remove rows as needed.")
 
-df = None
-if data_file is not None:
+data_file = st.file_uploader("Excel (.xlsx) or CSV with one row per person (optional)", type=["xlsx", "xls", "csv"])
+
+DEFAULT_COLS = ["email", "name", "company"]
+
+if "recipients" not in st.session_state:
+    st.session_state["recipients"] = pd.DataFrame(columns=DEFAULT_COLS)
+
+if data_file is not None and st.session_state.get("last_loaded_file") != data_file.file_id:
     try:
-        if data_file.name.lower().endswith(".csv"):
-            df = pd.read_csv(data_file)
-        else:
-            df = pd.read_excel(data_file)
-        df.columns = [str(c).strip() for c in df.columns]
-        st.success(f"Loaded {len(df)} rows, columns: {', '.join(df.columns)}")
-        st.dataframe(df.head(10), use_container_width=True)
+        loaded = pd.read_csv(data_file) if data_file.name.lower().endswith(".csv") else pd.read_excel(data_file)
+        loaded.columns = [str(c).strip() for c in loaded.columns]
+        existing = st.session_state["recipients"]
+        combined = pd.concat([existing, loaded], ignore_index=True) if not existing.empty else loaded
+        st.session_state["recipients"] = combined.fillna("")
+        st.session_state["last_loaded_file"] = data_file.file_id
+        st.success(f"Loaded {len(loaded)} rows from file — merged into the table below.")
     except Exception as e:
         st.error(f"Could not read file: {e}")
 
+st.write("Add, edit, or delete rows manually (use the **+** row at the bottom to add one email at a time):")
+edited = st.data_editor(
+    st.session_state["recipients"],
+    num_rows="dynamic",
+    use_container_width=True,
+    key="recipients_editor",
+)
+st.session_state["recipients"] = edited
+
+df = edited if not edited.empty else None
+
 email_col = None
-if df is not None:
+if df is not None and len(df.columns) > 0:
     guess = next((c for c in df.columns if c.lower() == "email"), df.columns[0])
     email_col = st.selectbox("Which column is the email address?", df.columns, index=list(df.columns).index(guess))
+    df = df[df[email_col].astype(str).str.strip().str.contains("@", na=False)]
+    if df.empty:
+        df = None
 
 # ---------------- Step 3: template ----------------
 st.header("3. Compose template")
