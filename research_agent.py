@@ -114,6 +114,11 @@ class ResearchAgent:
                 tools=tools,
                 tool_choice="auto",
                 temperature=0.3,
+                max_tokens=2048,
+                # Disable chain-of-thought leaking into `content` — this agent needs a clean
+                # final answer, not exposed reasoning. Without this the model can burn the
+                # whole token budget thinking and get cut off before answering.
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
             msg = resp.choices[0].message
 
