@@ -138,6 +138,65 @@ if df is not None and len(df.columns) > 0:
     if df.empty:
         df = None
 
+# ---------------- Step 2b: AI company research (optional) ----------------
+st.header("2b. AI company research (optional)")
+st.caption(
+    "Auto-fill a {company_info} column per row using an NVIDIA NIM agent that searches the web "
+    "and can spawn sub-agents to split up the research. Needs a free NVIDIA API key from build.nvidia.com."
+)
+
+with st.expander("Set up research agent"):
+    nvidia_api_key = st.text_input(
+        "NVIDIA API key", type="password", help="Kept in memory only for this session — never saved to disk."
+    )
+    try:
+        from research_agent import RECOMMENDED_MODELS
+
+        model_choice = st.selectbox(
+            "Model", RECOMMENDED_MODELS, help="Ultra = most capable. Nano = fastest. All free endpoints."
+        )
+    except ImportError:
+        model_choice = None
+        st.warning("research_agent.py dependencies (`openai`, `ddgs`) not installed — see requirements.txt.")
+
+    company_col = None
+    if df is not None:
+        candidates = [c for c in df.columns if c.lower() in ("company", "organization", "org")]
+        guess_co = candidates[0] if candidates else df.columns[0]
+        company_col = st.selectbox(
+            "Which column is the company name?", df.columns, index=list(df.columns).index(guess_co)
+        )
+
+    run_research = st.button(
+        "🔎 Research companies now",
+        disabled=not (nvidia_api_key and model_choice and df is not None and company_col),
+    )
+
+if run_research:
+    from research_agent import ResearchAgent
+
+    agent = ResearchAgent(api_key=nvidia_api_key, model=model_choice)
+    cache = st.session_state.setdefault("company_info_cache", {})
+    unique_companies = [c for c in df[company_col].dropna().unique() if str(c).strip()]
+
+    progress = st.progress(0)
+    status = st.empty()
+    for i, company in enumerate(unique_companies):
+        if company not in cache:
+            status.write(f"Researching {company}...")
+            try:
+                cache[company] = agent.research_company(str(company))
+            except Exception as e:
+                cache[company] = f"(research failed: {e})"
+        progress.progress((i + 1) / max(len(unique_companies), 1))
+    status.write("Done.")
+
+    updated = st.session_state["recipients"].copy()
+    updated["company_info"] = updated[company_col].map(lambda c: cache.get(c, ""))
+    st.session_state["recipients"] = updated
+    st.success(f"Filled company_info for {len(unique_companies)} companies — use {{company_info}} in your template.")
+    st.rerun()
+
 # ---------------- Step 3: template ----------------
 st.header("3. Compose template")
 st.caption(
