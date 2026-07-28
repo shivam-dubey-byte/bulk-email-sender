@@ -199,15 +199,21 @@ if run_research:
     updated = st.session_state["recipients"].copy()
     updated["company_info"] = updated[company_col].map(lambda c: cache.get(c, ""))
     st.session_state["recipients"] = updated
+    # The data_editor widget caches its own state under "recipients_editor"; without clearing
+    # it, the widget ignores the new "recipients" dataframe on rerun and shows stale data.
+    st.session_state.pop("recipients_editor", None)
     st.success(f"Filled company_info for {len(unique_companies)} companies — use {{company_info}} in your template.")
     st.rerun()
 
 # ---------------- Step 3: template ----------------
 st.header("3. Compose template")
+available_cols = list(df.columns) if df is not None else []
 st.caption(
-    "Use {column_name} placeholders anywhere (subject or body) to pull values from each row, "
-    "e.g. {name}, {company}, {amount}."
+    "Use {column_name} placeholders anywhere (subject or body) to pull values from each row. "
+    + (f"Columns available right now: {', '.join('{' + c + '}' for c in available_cols)}." if available_cols else "")
 )
+if df is not None and "company_info" not in df.columns:
+    st.caption("💡 No `company_info` column yet — run step 2b's research agent first if you want an AI-written company blurb to plug in here.")
 
 is_html = st.checkbox("Body is HTML", value=True)
 subject_tpl = st.text_input("Subject", value="Hello {name}")
