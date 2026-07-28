@@ -142,13 +142,18 @@ if df is not None and len(df.columns) > 0:
 st.header("2b. AI company research (optional)")
 st.caption(
     "Auto-fill a {company_info} column per row using an NVIDIA NIM agent that searches the web "
-    "and can spawn sub-agents to split up the research. Needs a free NVIDIA API key from build.nvidia.com."
+    "and can spawn sub-agents to split up the research."
 )
 
-with st.expander("Set up research agent"):
-    nvidia_api_key = st.text_input(
-        "NVIDIA API key", type="password", help="Kept in memory only for this session — never saved to disk."
+nvidia_api_key = st.secrets.get("NVIDIA_API_KEY")
+if not nvidia_api_key:
+    st.info(
+        "Research agent not configured. App owner: add NVIDIA_API_KEY in Streamlit Cloud → "
+        "Settings → Secrets to enable this for everyone using the app.",
+        icon="🔑",
     )
+
+with st.expander("Set up research agent", expanded=not bool(nvidia_api_key)):
     try:
         from research_agent import RECOMMENDED_MODELS
 
