@@ -43,12 +43,21 @@ def build_message(sender: str, to_addr: str, subject: str, body: str, is_html: b
     return msg
 
 
+def get_secret(key: str):
+    """st.secrets.get() raises StreamlitSecretNotFoundError (not just returning None) when
+    there's no secrets.toml at all — e.g. plain local dev. This makes that case safe."""
+    try:
+        return st.secrets.get(key)
+    except Exception:
+        return None
+
+
 st.set_page_config(page_title="Bulk Email Sender", page_icon="📧", layout="wide")
 
 # ---------------- Access gate ----------------
 # Set ACCESS_CODE in Streamlit Cloud → App settings → Secrets to lock this app down.
 # If no ACCESS_CODE secret is configured (e.g. local dev), the gate is skipped.
-required_code = st.secrets.get("ACCESS_CODE")
+required_code = get_secret("ACCESS_CODE")
 if required_code:
     if not st.session_state.get("unlocked"):
         st.title("🔒 Locked")
@@ -161,7 +170,7 @@ st.caption(
     "and can spawn sub-agents to split up the research."
 )
 
-nvidia_api_key = st.secrets.get("NVIDIA_API_KEY")
+nvidia_api_key = get_secret("NVIDIA_API_KEY")
 if not nvidia_api_key:
     st.info(
         "Research agent not configured. App owner: add NVIDIA_API_KEY in Streamlit Cloud → "
