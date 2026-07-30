@@ -125,6 +125,13 @@ if data_file is not None and st.session_state.get("last_loaded_file") != data_fi
         st.session_state["recipients"] = combined.fillna("")
         st.session_state["last_loaded_file"] = data_file.file_id
         st.success(f"Loaded {len(loaded)} rows from file — merged into the table below.")
+
+        # Pre-written-email files (e.g. a research/lead-gen export) carry their own subject/body
+        # per row — auto-wire the template to use them instead of making the user retype placeholders.
+        if "Subject Line" in loaded.columns and "Personalized Email" in loaded.columns:
+            st.session_state["subject_input"] = "{Subject Line}"
+            st.session_state["body_input"] = "{Personalized Email}"
+            st.session_state["is_html_checkbox"] = True
     except Exception as e:
         st.error(f"Could not read file: {e}")
 
@@ -224,17 +231,20 @@ st.caption(
 if df is not None and "company_info" not in df.columns:
     st.caption("💡 No `company_info` column yet — run step 2b's research agent first if you want an AI-written company blurb to plug in here.")
 
-is_html = st.checkbox("Body is HTML", value=True)
-subject_tpl = st.text_input("Subject", value="Hello {name}")
-body_tpl = st.text_area(
-    "Body",
-    height=260,
-    value=(
-        "<p>Hi {name},</p><p>Write your message for {company} here.</p><p>Regards,<br>Your Team</p>"
-        if is_html
-        else "Hi {name},\n\nWrite your message for {company} here.\n\nRegards,\nYour Team"
-    ),
+# Defaults are seeded into session_state (not passed as widget `value=`) so that the
+# auto-fill-on-upload logic above can override them without Streamlit's key/value conflict warning.
+st.session_state.setdefault("is_html_checkbox", True)
+st.session_state.setdefault("subject_input", "Hello {name}")
+st.session_state.setdefault(
+    "body_input",
+    "<p>Hi {name},</p><p>Write your message for {company} here.</p><p>Regards,<br>Your Team</p>"
+    if st.session_state["is_html_checkbox"]
+    else "Hi {name},\n\nWrite your message for {company} here.\n\nRegards,\nYour Team",
 )
+
+is_html = st.checkbox("Body is HTML", key="is_html_checkbox")
+subject_tpl = st.text_input("Subject", key="subject_input")
+body_tpl = st.text_area("Body", height=260, key="body_input")
 
 if df is not None and email_col:
     st.subheader("Preview (first row)")
