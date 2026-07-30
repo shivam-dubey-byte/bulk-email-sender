@@ -6,6 +6,7 @@ Nothing is written to disk: credentials live only in this browser session's memo
 for the duration of the run and are discarded when the app is closed/reloaded.
 """
 
+import imaplib
 import smtplib
 import ssl
 import string
@@ -17,9 +18,9 @@ import pandas as pd
 import streamlit as st
 
 PROVIDERS = {
-    "Gmail": {"host": "smtp.gmail.com", "port": 587},
-    "Outlook / Office365": {"host": "smtp.office365.com", "port": 587},
-    "Custom": {"host": "", "port": 587},
+    "Gmail": {"host": "smtp.gmail.com", "port": 587, "imap_host": "imap.gmail.com", "imap_port": 993, "sent_folder": '"[Gmail]/Sent Mail"'},
+    "Outlook / Office365": {"host": "smtp.office365.com", "port": 587, "imap_host": "outlook.office365.com", "imap_port": 993, "sent_folder": '"Sent Items"'},
+    "Custom": {"host": "", "port": 587, "imap_host": "", "imap_port": 993, "sent_folder": '"Sent"'},
 }
 
 
@@ -108,6 +109,27 @@ with st.sidebar.expander("Sending speed"):
         "Delay between emails (seconds)", min_value=0.0, value=2.0, step=0.5, key="delay_sec"
     )
     st.caption("Keep a delay to avoid provider rate-limits / spam flags.")
+
+with st.sidebar.expander("Save sent emails to my Sent folder (IMAP)"):
+    st.caption(
+        "SMTP sending doesn't touch your mailbox's Sent folder — that's only updated by a mail "
+        "client explicitly saving a copy. Turn this on to have this tool do that via IMAP. "
+        "Gmail/Outlook sometimes save a copy automatically already — check before enabling, to avoid duplicates."
+    )
+    save_to_sent = st.checkbox("Save a copy to Sent via IMAP", value=False, key="save_to_sent")
+    imap_host = st.text_input(
+        "IMAP host", value=PROVIDERS[provider_name].get("imap_host", ""), key="imap_host", disabled=not save_to_sent
+    )
+    imap_port = st.number_input(
+        "IMAP port", value=PROVIDERS[provider_name].get("imap_port", 993), key="imap_port", disabled=not save_to_sent
+    )
+    sent_folder = st.text_input(
+        "Sent folder name",
+        value=PROVIDERS[provider_name].get("sent_folder", '"Sent"'),
+        key="sent_folder",
+        disabled=not save_to_sent,
+        help='Exact IMAP folder name, quoted if it has spaces — e.g. "Sent Items", "[Gmail]/Sent Mail".',
+    )
 
 st.sidebar.info(
     "Credentials are kept only in memory for this session — never saved to disk or logged.",
@@ -290,6 +312,15 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
         st.error(f"Login/connection failed — check email/app password/SMTP settings.\n\n{e}")
         server = None
 
+    imap_conn = None
+    if server is not None and save_to_sent:
+        try:
+            imap_conn = imaplib.IMAP4_SSL(imap_host, int(imap_port), timeout=30)
+            imap_conn.login(sender_email, sender_password)
+        except Exception as e:
+            st.warning(f"Couldn't connect to IMAP to save Sent-folder copies — sending will continue without it.\n\n{e}")
+            imap_conn = None
+
     if server is not None:
         for i, (_, row) in enumerate(df.iterrows()):
             row_dict = row.to_dict()
@@ -302,6 +333,13 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
                     msg = build_message(sender_email, to_addr, subject, body, is_html)
                     server.sendmail(sender_email, [to_addr], msg.as_string())
                     status = "sent"
+                    if imap_conn is not None:
+                        try:
+                            imap_conn.append(
+                                sent_folder, "\\Seen", imaplib.Time2Internaldate(time.time()), msg.as_bytes()
+                            )
+                        except Exception as e:
+                            status = f"sent (Sent-folder save failed: {e})"
                 except Exception as e:
                     status = f"failed: {e}"
             results.append({"email": to_addr, "status": status})
@@ -314,6 +352,11 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
             server.quit()
         except Exception:
             pass
+        if imap_conn is not None:
+            try:
+                imap_conn.logout()
+            except Exception:
+                pass
 
         result_df = pd.DataFrame(results)
         sent = (result_df["status"] == "sent").sum()
