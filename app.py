@@ -35,13 +35,27 @@ def render(template: str, row: dict) -> str:
     return string.Formatter().vformat(template, (), SafeDict(row))
 
 
-def build_message(sender: str, to_addr: str, subject: str, body: str, is_html: bool) -> MIMEMultipart:
+def build_message(
+    sender: str, to_addr: str, subject: str, body: str, is_html: bool, cc_list=None, bcc_list=None
+) -> MIMEMultipart:
     msg = MIMEMultipart("alternative")
     msg["From"] = sender
     msg["To"] = to_addr
     msg["Subject"] = subject
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
+    # Bcc is deliberately never set as a header — it must stay invisible to recipients.
+    # It's only added to the SMTP envelope recipient list at send time.
     msg.attach(MIMEText(body, "html" if is_html else "plain"))
     return msg
+
+
+def parse_email_list(raw: str) -> list:
+    """Comma/semicolon-separated addresses -> clean list, blanks dropped."""
+    if not raw:
+        return []
+    parts = raw.replace(";", ",").split(",")
+    return [p.strip() for p in parts if p.strip()]
 
 
 def get_secret(key: str):
@@ -277,10 +291,34 @@ is_html = st.checkbox("Body is HTML", key="is_html_checkbox")
 subject_tpl = st.text_input("Subject", key="subject_input")
 body_tpl = st.text_area("Body", height=260, key="body_input")
 
+cc_col, bcc_col = None, None
+col_a, col_b = st.columns(2)
+with col_a:
+    global_cc = st.text_input("CC (applies to every email, comma-separated)", key="global_cc")
+with col_b:
+    global_bcc = st.text_input("BCC (applies to every email, comma-separated)", key="global_bcc")
+
+if df is not None:
+    detected_cc = next((c for c in df.columns if c.lower() == "cc"), None)
+    detected_bcc = next((c for c in df.columns if c.lower() == "bcc"), None)
+    if detected_cc or detected_bcc:
+        st.caption(
+            "Also found "
+            + " and ".join(f'a "{c}" column' for c in [detected_cc, detected_bcc] if c)
+            + " in your data — those are added per-row on top of the CC/BCC above."
+        )
+    cc_col, bcc_col = detected_cc, detected_bcc
+
 if df is not None and email_col:
     st.subheader("Preview (first row)")
     sample_row = df.iloc[0].to_dict()
     st.write("**Subject:**", render(subject_tpl, sample_row))
+    preview_cc = parse_email_list(global_cc) + parse_email_list(str(sample_row.get(cc_col, "")) if cc_col else "")
+    preview_bcc = parse_email_list(global_bcc) + parse_email_list(str(sample_row.get(bcc_col, "")) if bcc_col else "")
+    if preview_cc:
+        st.caption(f"CC: {', '.join(dict.fromkeys(preview_cc))}")
+    if preview_bcc:
+        st.caption(f"BCC: {', '.join(dict.fromkeys(preview_bcc))}")
     if is_html:
         st.components.v1.html(render(body_tpl, sample_row), height=200, scrolling=True)
     else:
@@ -330,8 +368,21 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
                 try:
                     subject = render(subject_tpl, row_dict)
                     body = render(body_tpl, row_dict)
-                    msg = build_message(sender_email, to_addr, subject, body, is_html)
-                    server.sendmail(sender_email, [to_addr], msg.as_string())
+                    row_cc = list(
+                        dict.fromkeys(
+                            parse_email_list(global_cc)
+                            + (parse_email_list(str(row_dict.get(cc_col, ""))) if cc_col else [])
+                        )
+                    )
+                    row_bcc = list(
+                        dict.fromkeys(
+                            parse_email_list(global_bcc)
+                            + (parse_email_list(str(row_dict.get(bcc_col, ""))) if bcc_col else [])
+                        )
+                    )
+                    msg = build_message(sender_email, to_addr, subject, body, is_html, row_cc, row_bcc)
+                    envelope_recipients = list(dict.fromkeys([to_addr] + row_cc + row_bcc))
+                    server.sendmail(sender_email, envelope_recipients, msg.as_string())
                     status = "sent"
                     if imap_conn is not None:
                         try:
