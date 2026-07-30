@@ -65,21 +65,28 @@ st.title("📧 Bulk Personalized Email Sender")
 
 # ---------------- Sidebar: account ----------------
 st.sidebar.header("1. Your email account")
-provider_name = st.sidebar.selectbox("Provider", list(PROVIDERS.keys()))
+provider_name = st.sidebar.selectbox("Provider", list(PROVIDERS.keys()), key="smtp_provider_name")
 default_host, default_port = PROVIDERS[provider_name]["host"], PROVIDERS[provider_name]["port"]
 
 if provider_name == "Custom":
-    smtp_host = st.sidebar.text_input("SMTP host")
-    smtp_port = st.sidebar.number_input("SMTP port", value=587)
+    smtp_host = st.sidebar.text_input("SMTP host", key="smtp_host_custom")
+    smtp_port = st.sidebar.number_input("SMTP port", value=587, key="smtp_port_custom")
 else:
     smtp_host = default_host
     smtp_port = default_port
     st.sidebar.caption(f"SMTP: {smtp_host}:{smtp_port}")
 
-sender_email = st.sidebar.text_input("Your email address")
+# Stashed under stable keys (not just the widget's own auto key) so other pages
+# (e.g. the Research-Based Outreach page) can reuse the same account without
+# asking the user to re-enter it.
+st.session_state["smtp_host"] = smtp_host
+st.session_state["smtp_port"] = smtp_port
+
+sender_email = st.sidebar.text_input("Your email address", key="sender_email")
 sender_password = st.sidebar.text_input(
     "App password",
     type="password",
+    key="sender_password",
     help=(
         "Gmail: needs 2-Step Verification ON, then create an App Password "
         "(Google Account → Security → App passwords). Your normal login password will NOT work.\n\n"
@@ -88,7 +95,9 @@ sender_password = st.sidebar.text_input(
 )
 
 with st.sidebar.expander("Sending speed"):
-    delay_sec = st.number_input("Delay between emails (seconds)", min_value=0.0, value=2.0, step=0.5)
+    delay_sec = st.number_input(
+        "Delay between emails (seconds)", min_value=0.0, value=2.0, step=0.5, key="delay_sec"
+    )
     st.caption("Keep a delay to avoid provider rate-limits / spam flags.")
 
 st.sidebar.info(
