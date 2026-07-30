@@ -251,8 +251,12 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
 
     try:
         context = ssl.create_default_context()
-        server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=30)
-        server.starttls(context=context)
+        if int(smtp_port) == 465:
+            # Implicit SSL (common for cPanel/Zoho/GoDaddy-hosted custom mail) — no STARTTLS step.
+            server = smtplib.SMTP_SSL(smtp_host, int(smtp_port), timeout=30, context=context)
+        else:
+            server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=30)
+            server.starttls(context=context)
         server.login(sender_email, sender_password)
     except Exception as e:
         st.error(f"Login/connection failed — check email/app password/SMTP settings.\n\n{e}")
