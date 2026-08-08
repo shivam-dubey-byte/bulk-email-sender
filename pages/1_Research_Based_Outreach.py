@@ -130,14 +130,18 @@ if df is not None:
         status_area = st.empty()
         results = []
 
-        try:
+        def connect_smtp():
             context = ssl.create_default_context()
             if int(smtp_port) == 465:
-                server = smtplib.SMTP_SSL(smtp_host, int(smtp_port), timeout=30, context=context)
+                conn = smtplib.SMTP_SSL(smtp_host, int(smtp_port), timeout=30, context=context)
             else:
-                server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=30)
-                server.starttls(context=context)
-            server.login(sender_email, sender_password)
+                conn = smtplib.SMTP(smtp_host, int(smtp_port), timeout=30)
+                conn.starttls(context=context)
+            conn.login(sender_email, sender_password)
+            return conn
+
+        try:
+            server = connect_smtp()
         except Exception as e:
             st.error(f"Login/connection failed — check the account on the main Bulk Email Sender page.\n\n{e}")
             server = None
@@ -152,7 +156,14 @@ if df is not None:
                         subject = render(subject_tpl, row_dict)
                         body = render(body_tpl, _render_row_for_body(row_dict))
                         msg = build_message(sender_email, to_addr, subject, body, is_html=True)
-                        server.sendmail(sender_email, [to_addr], msg.as_string())
+                        try:
+                            server.sendmail(sender_email, [to_addr], msg.as_string())
+                        except (smtplib.SMTPException, OSError):
+                            # Same per-session message cap seen on the main Bulk Email Sender
+                            # page (GoDaddy et al.) — reconnect and retry this row once.
+                            time.sleep(5)
+                            server = connect_smtp()
+                            server.sendmail(sender_email, [to_addr], msg.as_string())
                         status = "sent"
                     except Exception as e:
                         status = f"failed: {e}"

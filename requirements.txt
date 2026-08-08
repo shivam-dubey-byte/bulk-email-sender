@@ -1,5 +1,5 @@
-streamlit>=1.35
-pandas>=2.0
-openpyxl>=3.1
-openai>=1.40
-ddgs>=9.0
+streamlit==1.60.0
+pandas==3.0.3
+openpyxl==3.1.5
+openai==2.49.0
+ddgs==9.14.4

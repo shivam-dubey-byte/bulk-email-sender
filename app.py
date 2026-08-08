@@ -35,15 +35,23 @@ def render(template: str, row: dict) -> str:
     return string.Formatter().vformat(template, (), SafeDict(row))
 
 
+def _header_safe(value: str) -> str:
+    """Strips embedded CR/LF before a value goes into a header. Template/upload
+    data can carry stray newlines (e.g. scraped web text) — the classic
+    email.mime API doesn't sanitize these itself, so a crafted value could
+    inject extra headers (CWE-93) if left as-is."""
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 def build_message(
     sender: str, to_addr: str, subject: str, body: str, is_html: bool, cc_list=None, bcc_list=None
 ) -> MIMEMultipart:
     msg = MIMEMultipart("alternative")
-    msg["From"] = sender
-    msg["To"] = to_addr
-    msg["Subject"] = subject
+    msg["From"] = _header_safe(sender)
+    msg["To"] = _header_safe(to_addr)
+    msg["Subject"] = _header_safe(subject)
     if cc_list:
-        msg["Cc"] = ", ".join(cc_list)
+        msg["Cc"] = _header_safe(", ".join(cc_list))
     # Bcc is deliberately never set as a header — it must stay invisible to recipients.
     # It's only added to the SMTP envelope recipient list at send time.
     msg.attach(MIMEText(body, "html" if is_html else "plain"))
@@ -76,13 +84,30 @@ required_code = get_secret("ACCESS_CODE")
 if required_code:
     if not st.session_state.get("unlocked"):
         st.title("🔒 Locked")
+        # Session-scoped lockout, not IP-based — a determined attacker can just open a
+        # fresh session to reset it. Still stops trivial same-session brute-forcing,
+        # which is the realistic threat against a short/guessable code.
+        attempts = st.session_state.get("access_attempts", 0)
+        lockout_until = st.session_state.get("access_lockout_until", 0)
+        now = time.time()
+        if now < lockout_until:
+            st.error(f"Too many wrong attempts — try again in {int(lockout_until - now)}s.")
+            st.stop()
         entered = st.text_input("Access code", type="password")
         if st.button("Unlock"):
             if entered == required_code:
                 st.session_state["unlocked"] = True
+                st.session_state["access_attempts"] = 0
                 st.rerun()
             else:
-                st.error("Wrong code.")
+                attempts += 1
+                st.session_state["access_attempts"] = attempts
+                if attempts >= 5:
+                    cooldown = 60 * (attempts - 4)
+                    st.session_state["access_lockout_until"] = now + cooldown
+                    st.error(f"Too many wrong attempts — locked for {cooldown}s.")
+                else:
+                    st.error("Wrong code.")
         st.stop()
 
 st.title("📧 Bulk Personalized Email Sender")

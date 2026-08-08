@@ -22,11 +22,19 @@ def render(template: str, row: dict) -> str:
     return string.Formatter().vformat(template, (), SafeDict(row))
 
 
+def _header_safe(value: str) -> str:
+    """Strips embedded CR/LF before a value goes into a header. Template/upload
+    data can carry stray newlines (e.g. scraped web text) — the classic
+    email.mime API doesn't sanitize these itself, so a crafted value could
+    inject extra headers (CWE-93) if left as-is."""
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 def build_message(sender: str, to_addr: str, subject: str, body: str, is_html: bool) -> MIMEMultipart:
     msg = MIMEMultipart("alternative")
-    msg["From"] = sender
-    msg["To"] = to_addr
-    msg["Subject"] = subject
+    msg["From"] = _header_safe(sender)
+    msg["To"] = _header_safe(to_addr)
+    msg["Subject"] = _header_safe(subject)
     msg.attach(MIMEText(body, "html" if is_html else "plain"))
     return msg
 
