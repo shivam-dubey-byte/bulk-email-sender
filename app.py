@@ -388,11 +388,16 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
                     envelope_recipients = list(dict.fromkeys([to_addr] + row_cc + row_bcc))
                     try:
                         server.sendmail(sender_email, envelope_recipients, msg.as_string())
-                    except (smtplib.SMTPServerDisconnected, smtplib.SMTPSenderRefused, OSError):
-                        # Mail servers (GoDaddy included) often cap how many messages — or how
-                        # long — one connection stays open, then drop it. Without reconnecting
-                        # here, every remaining row in the batch fails the same way. Reconnect
-                        # once and retry this row before giving up on it.
+                    except (smtplib.SMTPException, OSError):
+                        # Mail servers (GoDaddy included) cap how many messages — or how long —
+                        # one connection stays open, then either drop it outright
+                        # (SMTPServerDisconnected) or soft-reject with e.g. "452 too many
+                        # messages sent in a single session" (SMTPRecipientsRefused — not a
+                        # subclass of SMTPResponseException, so it needs the full SMTPException
+                        # base to be caught here). Either way the connection is now dead for the
+                        # rest of the batch unless we reconnect. GoDaddy's own error says "in a
+                        # new session" — give it a moment first.
+                        time.sleep(5)
                         server = connect_smtp()
                         server.sendmail(sender_email, envelope_recipients, msg.as_string())
                     status = "sent"
