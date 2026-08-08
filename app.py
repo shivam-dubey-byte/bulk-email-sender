@@ -337,15 +337,19 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
     status_area = st.empty()
     results = []
 
-    try:
+    def connect_smtp():
         context = ssl.create_default_context()
         if int(smtp_port) == 465:
             # Implicit SSL (common for cPanel/Zoho/GoDaddy-hosted custom mail) — no STARTTLS step.
-            server = smtplib.SMTP_SSL(smtp_host, int(smtp_port), timeout=30, context=context)
+            conn = smtplib.SMTP_SSL(smtp_host, int(smtp_port), timeout=30, context=context)
         else:
-            server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=30)
-            server.starttls(context=context)
-        server.login(sender_email, sender_password)
+            conn = smtplib.SMTP(smtp_host, int(smtp_port), timeout=30)
+            conn.starttls(context=context)
+        conn.login(sender_email, sender_password)
+        return conn
+
+    try:
+        server = connect_smtp()
     except Exception as e:
         st.error(f"Login/connection failed — check email/app password/SMTP settings.\n\n{e}")
         server = None
@@ -382,7 +386,15 @@ if st.button("🚀 Send to all", disabled=not ready, type="primary"):
                     )
                     msg = build_message(sender_email, to_addr, subject, body, is_html, row_cc, row_bcc)
                     envelope_recipients = list(dict.fromkeys([to_addr] + row_cc + row_bcc))
-                    server.sendmail(sender_email, envelope_recipients, msg.as_string())
+                    try:
+                        server.sendmail(sender_email, envelope_recipients, msg.as_string())
+                    except (smtplib.SMTPServerDisconnected, smtplib.SMTPSenderRefused, OSError):
+                        # Mail servers (GoDaddy included) often cap how many messages — or how
+                        # long — one connection stays open, then drop it. Without reconnecting
+                        # here, every remaining row in the batch fails the same way. Reconnect
+                        # once and retry this row before giving up on it.
+                        server = connect_smtp()
+                        server.sendmail(sender_email, envelope_recipients, msg.as_string())
                     status = "sent"
                     if imap_conn is not None:
                         try:

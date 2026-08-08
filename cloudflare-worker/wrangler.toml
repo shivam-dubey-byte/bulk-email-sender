@@ -1,0 +1,7 @@
+name = "bulkemail-redirect"
+main = "src/index.js"
+compatibility_date = "2026-08-06"
+
+routes = [
+  { pattern = "bulkemail.shivamrajdubey.com", custom_domain = true }
+]
