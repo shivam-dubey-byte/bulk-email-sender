@@ -6,6 +6,7 @@ app.py never needs to be imported as a module (it's a top-level script full
 of st.* calls, importing it would re-run the whole main page as a side effect).
 """
 
+import re
 import string
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -27,7 +28,7 @@ def _header_safe(value: str) -> str:
     data can carry stray newlines (e.g. scraped web text) — the classic
     email.mime API doesn't sanitize these itself, so a crafted value could
     inject extra headers (CWE-93) if left as-is."""
-    return str(value).replace("\r", " ").replace("\n", " ")
+    return re.sub(r"[\r\n]+", " ", str(value))
 
 
 def build_message(sender: str, to_addr: str, subject: str, body: str, is_html: bool) -> MIMEMultipart:

@@ -7,6 +7,7 @@ for the duration of the run and are discarded when the app is closed/reloaded.
 """
 
 import imaplib
+import re
 import smtplib
 import ssl
 import string
@@ -40,7 +41,7 @@ def _header_safe(value: str) -> str:
     data can carry stray newlines (e.g. scraped web text) — the classic
     email.mime API doesn't sanitize these itself, so a crafted value could
     inject extra headers (CWE-93) if left as-is."""
-    return str(value).replace("\r", " ").replace("\n", " ")
+    return re.sub(r"[\r\n]+", " ", str(value))
 
 
 def build_message(
